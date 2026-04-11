@@ -8,9 +8,17 @@
  *   Step 2 → Select a Camera (filtered by chosen center)
  *   Step 3 → Draw a bounding box on the camera placeholder canvas
  *   Drawer → Link the zone to a Table, Microphone, and Agent
+ *
+ * Live AI Overlays (Enterprise Edition):
+ *   - Fall detected    → pulsing skeleton icon (🦴) over canvas + red border flash
+ *   - Audio alert      → concentric soundwave ripple animation at bottom of canvas
+ *   - Weapon detected  → orange WARNING stripe across canvas
+ *   - Crowd detected   → amber crowd icon pulse
+ *   - Fire detected    → orange/red flame flicker overlay
+ *   All overlays auto-clear after 8 seconds or on camera change.
  */
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import {
   Map,
@@ -20,12 +28,272 @@ import {
   CheckCircle2,
   RefreshCw,
   Bot,
+  ShieldAlert,
+  Volume2,
+  PersonStanding,
+  Flame,
+  Users,
 } from 'lucide-react';
 import { centersApi } from '@/lib/api';
-import type { Center, Camera } from '@/types';
+import type { Center, Camera, WsEventEnvelope } from '@/types';
 import type { BBoxNorm } from './BoundingBoxDrawer';
 import LinkTableDrawer from './LinkTableDrawer';
 import AiSettingsModal from './AiSettingsModal';
+import { useSocket } from '@/hooks/useSocket';
+import { cn } from '@/lib/utils';
+
+// ─── Live AI overlay types ────────────────────────────────────────────────────
+type OverlayKind = 'fall' | 'audio' | 'weapon' | 'crowd' | 'fire';
+
+interface ActiveOverlay {
+  id: string;
+  kind: OverlayKind;
+  label: string;
+  centerId: string;
+  /** ms timestamp when this overlay expires */
+  expiresAt: number;
+}
+
+const OVERLAY_TTL_MS = 8_000; // overlays auto-clear after 8 s
+
+// ─── Map WS event → overlay kind ─────────────────────────────────────────────
+const EVENT_TO_OVERLAY: Partial<Record<string, OverlayKind>> = {
+  'alert:fall_detected':       'fall',
+  'alert:sick_detected':       'fall',
+  'alert:high_audio_level':    'audio',
+  'alert:vandalism_detected':  'audio',
+  'alert:irate_customer':      'audio',
+  'alert:weapon_detected':     'weapon',
+  'alert:aggression_detected': 'weapon',
+  'alert:crowd_detected':      'crowd',
+  'alert:long_stay':           'crowd',
+  'alert:fire_detected':       'fire',
+};
+
+const OVERLAY_EVENTS = Object.keys(EVENT_TO_OVERLAY);
+
+// ─── Overlay event labels ─────────────────────────────────────────────────────
+const OVERLAY_META: Record<OverlayKind, { label: string; color: string; borderColor: string }> = {
+  fall:   { label: 'FALL / SICK DETECTED',    color: 'bg-red-500/20',     borderColor: 'border-red-500'    },
+  audio:  { label: 'AUDIO ALERT',             color: 'bg-amber-500/15',   borderColor: 'border-amber-500'  },
+  weapon: { label: 'WEAPON / AGGRESSION',     color: 'bg-orange-500/25',  borderColor: 'border-orange-500' },
+  crowd:  { label: 'CROWD / LONG STAY',       color: 'bg-yellow-500/15',  borderColor: 'border-yellow-400' },
+  fire:   { label: 'FIRE / SMOKE DETECTED',   color: 'bg-orange-600/25',  borderColor: 'border-orange-600' },
+};
+
+// ─── Individual overlay component ────────────────────────────────────────────
+function CanvasOverlay({
+  overlays,
+  stageW,
+  stageH,
+}: {
+  overlays: ActiveOverlay[];
+  stageW: number;
+  stageH: number;
+}) {
+  if (overlays.length === 0) return null;
+
+  // Show the highest-priority overlay (weapon > fire > fall > audio > crowd)
+  const PRIORITY: OverlayKind[] = ['weapon', 'fire', 'fall', 'audio', 'crowd'];
+  const topKind = PRIORITY.find((k) => overlays.some((o) => o.kind === k)) ?? overlays[0].kind;
+  const meta    = OVERLAY_META[topKind];
+
+  return (
+    <div
+      className={cn(
+        'absolute inset-0 rounded-xl border-2 pointer-events-none overflow-hidden transition-all',
+        meta.color,
+        meta.borderColor,
+      )}
+      style={{ width: stageW, height: stageH }}
+    >
+      {/* Animated border pulse */}
+      <div className={cn('absolute inset-0 rounded-xl border-2 animate-ping opacity-40', meta.borderColor)} />
+
+      {/* Alert label banner */}
+      <div className={cn(
+        'absolute top-3 left-1/2 -translate-x-1/2 flex items-center gap-2',
+        'px-4 py-2 rounded-full backdrop-blur-md bg-slate-900/70 border text-xs font-bold tracking-widest animate-pulse',
+        meta.borderColor,
+      )}>
+        <OverlayIcon kind={topKind} />
+        <span className="text-white">{meta.label}</span>
+      </div>
+
+      {/* Kind-specific animation */}
+      {topKind === 'fall'   && <FallSkeleton stageW={stageW} stageH={stageH} />}
+      {topKind === 'audio'  && <SoundwaveRipple stageW={stageW} stageH={stageH} />}
+      {topKind === 'fire'   && <FireFlicker stageW={stageW} stageH={stageH} />}
+      {topKind === 'crowd'  && <CrowdPulse stageW={stageW} stageH={stageH} />}
+      {topKind === 'weapon' && <WeaponStripe stageW={stageW} stageH={stageH} />}
+
+      {/* Active alerts badge strip (bottom) */}
+      {overlays.length > 1 && (
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5">
+          {overlays.map((o) => (
+            <span key={o.id} className="px-2 py-0.5 rounded-full bg-slate-900/80 border border-slate-700 text-[10px] text-slate-300">
+              {OVERLAY_META[o.kind].label}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OverlayIcon({ kind }: { kind: OverlayKind }) {
+  switch (kind) {
+    case 'fall':   return <PersonStanding className="w-3.5 h-3.5 text-red-400" />;
+    case 'audio':  return <Volume2         className="w-3.5 h-3.5 text-amber-400" />;
+    case 'weapon': return <ShieldAlert     className="w-3.5 h-3.5 text-orange-400" />;
+    case 'crowd':  return <Users           className="w-3.5 h-3.5 text-yellow-400" />;
+    case 'fire':   return <Flame           className="w-3.5 h-3.5 text-orange-500" />;
+  }
+}
+
+// ── Fall skeleton: human figure lying down ───────────────────────────────────
+function FallSkeleton({ stageW, stageH }: { stageW: number; stageH: number }) {
+  const cx = stageW / 2;
+  const cy = stageH / 2;
+  return (
+    <svg className="absolute inset-0 pointer-events-none" width={stageW} height={stageH}>
+      {/* Pulsing body silhouette */}
+      <g className="animate-pulse" transform={`translate(${cx}, ${cy})`}>
+        {/* Head */}
+        <circle cx={0} cy={-40} r={16} fill="none" stroke="#ef4444" strokeWidth={3} />
+        {/* Torso (rotated — lying down) */}
+        <line x1={0} y1={-24} x2={0} y2={20} stroke="#ef4444" strokeWidth={3} strokeLinecap="round" />
+        {/* Arms (horizontal) */}
+        <line x1={-30} y1={-5} x2={30} y2={-5} stroke="#ef4444" strokeWidth={3} strokeLinecap="round" />
+        {/* Legs (spread) */}
+        <line x1={0} y1={20} x2={-25} y2={50} stroke="#ef4444" strokeWidth={3} strokeLinecap="round" />
+        <line x1={0} y1={20} x2={25} y2={50} stroke="#ef4444" strokeWidth={3} strokeLinecap="round" />
+      </g>
+      {/* Outer pulse ring */}
+      <circle cx={cx} cy={cy} r={80} fill="none" stroke="#ef4444" strokeWidth={1.5} opacity={0.3} className="animate-ping" />
+    </svg>
+  );
+}
+
+// ── Soundwave ripple: concentric circles from mic icon ───────────────────────
+function SoundwaveRipple({ stageW, stageH }: { stageW: number; stageH: number }) {
+  const cx = stageW / 2;
+  const cy = stageH - 60;
+  return (
+    <svg className="absolute inset-0 pointer-events-none" width={stageW} height={stageH}>
+      {/* Mic dot */}
+      <circle cx={cx} cy={cy} r={10} fill="#f59e0b" opacity={0.9} />
+      {/* Ripple rings at different animation delays */}
+      {[40, 70, 100, 130].map((r, i) => (
+        <circle
+          key={r}
+          cx={cx}
+          cy={cy}
+          r={r}
+          fill="none"
+          stroke="#f59e0b"
+          strokeWidth={2}
+          opacity={0.6 - i * 0.12}
+          style={{ animation: `ping ${1.2 + i * 0.3}s cubic-bezier(0,0,0.2,1) infinite`, animationDelay: `${i * 0.25}s` }}
+        />
+      ))}
+      {/* Bar waveform at top */}
+      {Array.from({ length: 24 }).map((_, i) => {
+        const barH = 6 + Math.abs(Math.sin(i * 0.8)) * 22;
+        return (
+          <rect
+            key={i}
+            x={stageW / 2 - 12 * 7 + i * 7}
+            y={20 + 25 - barH / 2}
+            width={4}
+            height={barH}
+            rx={2}
+            fill="#f59e0b"
+            opacity={0.5 + Math.abs(Math.sin(i * 0.8)) * 0.4}
+            className="animate-pulse"
+            style={{ animationDelay: `${i * 0.04}s` }}
+          />
+        );
+      })}
+    </svg>
+  );
+}
+
+// ── Fire flicker: wavy flame shapes ──────────────────────────────────────────
+function FireFlicker({ stageW, stageH }: { stageW: number; stageH: number }) {
+  return (
+    <svg className="absolute bottom-0 left-0 pointer-events-none" width={stageW} height={stageH / 3}>
+      {[0.15, 0.3, 0.5, 0.7, 0.85].map((frac, i) => {
+        const x = frac * stageW;
+        const h = 40 + i * 15;
+        return (
+          <ellipse
+            key={i}
+            cx={x}
+            cy={stageH / 3}
+            rx={12 + i * 3}
+            ry={h}
+            fill={i % 2 === 0 ? '#f97316' : '#ef4444'}
+            opacity={0.35}
+            className="animate-pulse"
+            style={{ animationDelay: `${i * 0.15}s`, animationDuration: `${0.7 + i * 0.1}s` }}
+          />
+        );
+      })}
+    </svg>
+  );
+}
+
+// ── Crowd pulse: grid of person icons ────────────────────────────────────────
+function CrowdPulse({ stageW, stageH }: { stageW: number; stageH: number }) {
+  const positions = Array.from({ length: 9 }, (_, i) => ({
+    x: stageW * (0.2 + (i % 3) * 0.3),
+    y: stageH * (0.3 + Math.floor(i / 3) * 0.2),
+  }));
+  return (
+    <svg className="absolute inset-0 pointer-events-none" width={stageW} height={stageH}>
+      {positions.map((pos, i) => (
+        <circle
+          key={i}
+          cx={pos.x}
+          cy={pos.y}
+          r={12}
+          fill="#eab308"
+          opacity={0.25}
+          className="animate-ping"
+          style={{ animationDelay: `${i * 0.12}s`, animationDuration: `1.4s` }}
+        />
+      ))}
+      {positions.map((pos, i) => (
+        <circle key={`dot-${i}`} cx={pos.x} cy={pos.y} r={4} fill="#eab308" opacity={0.7} />
+      ))}
+    </svg>
+  );
+}
+
+// ── Weapon stripe: diagonal danger warning ────────────────────────────────────
+function WeaponStripe({ stageW, stageH }: { stageW: number; stageH: number }) {
+  return (
+    <svg className="absolute inset-0 pointer-events-none animate-pulse" width={stageW} height={stageH}>
+      {/* Diagonal hazard stripes */}
+      {Array.from({ length: 8 }).map((_, i) => (
+        <line
+          key={i}
+          x1={stageW * 0.05 + i * (stageW / 7)}
+          y1={stageH * 0.2}
+          x2={stageW * 0.05 + i * (stageW / 7) - stageH * 0.6}
+          y2={stageH * 0.8}
+          stroke="#f97316"
+          strokeWidth={18}
+          opacity={0.12}
+        />
+      ))}
+      {/* Central X ──────────────────────────── */}
+      <line x1={stageW * 0.2} y1={stageH * 0.3} x2={stageW * 0.8} y2={stageH * 0.7} stroke="#f97316" strokeWidth={3} opacity={0.4} />
+      <line x1={stageW * 0.8} y1={stageH * 0.3} x2={stageW * 0.2} y2={stageH * 0.7} stroke="#f97316" strokeWidth={3} opacity={0.4} />
+    </svg>
+  );
+}
 
 // ─── Konva canvas — must be loaded client-side only ──────────────────────────
 const BoundingBoxDrawer = dynamic(() => import('./BoundingBoxDrawer'), {
@@ -73,8 +341,15 @@ export default function MappingPageClient() {
    */
   const [canvasKey, setCanvasKey] = useState(0);
 
+  // ── Live AI overlays ──────────────────────────────────────────────────────
+  const [activeOverlays, setActiveOverlays] = useState<ActiveOverlay[]>([]);
+  const overlayTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   // ── Derived step ─────────────────────────────────────────────────────────────
   const step = !selectedCenter ? 1 : !selectedCamera ? 2 : 3;
+
+  // ── Socket ───────────────────────────────────────────────────────────────────
+  const { socket } = useSocket();
 
   // ── Load all centers once ────────────────────────────────────────────────────
   useEffect(() => {
@@ -84,6 +359,61 @@ export default function MappingPageClient() {
       .catch(console.error)
       .finally(() => setCentLoading(false));
   }, []);
+
+  // ── Live AI overlay WS subscription ─────────────────────────────────────────
+  useEffect(() => {
+    if (!socket || !selectedCenter) return;
+
+    const handlers: Array<{ event: string; fn: (data: unknown) => void }> = [];
+
+    for (const event of OVERLAY_EVENTS) {
+      const fn = (data: unknown) => {
+        const envelope = data as WsEventEnvelope;
+        // Only show overlay if the alert is for the currently selected center
+        if (envelope.centerId !== selectedCenter.id) return;
+
+        const kind = EVENT_TO_OVERLAY[event];
+        if (!kind) return;
+
+        const overlay: ActiveOverlay = {
+          id:        `${event}-${Date.now()}`,
+          kind,
+          label:     OVERLAY_META[kind].label,
+          centerId:  envelope.centerId,
+          expiresAt: Date.now() + OVERLAY_TTL_MS,
+        };
+
+        setActiveOverlays((prev) => {
+          // Replace existing same-kind overlay so we don't stack duplicates
+          const filtered = prev.filter((o) => o.kind !== kind);
+          return [...filtered, overlay];
+        });
+      };
+      socket.on(event, fn);
+      handlers.push({ event, fn });
+    }
+
+    return () => {
+      handlers.forEach(({ event, fn }) => socket.off(event, fn));
+    };
+  }, [socket, selectedCenter]);
+
+  // ── Auto-expire overlays every second ────────────────────────────────────────
+  useEffect(() => {
+    overlayTimerRef.current = setInterval(() => {
+      const now = Date.now();
+      setActiveOverlays((prev) => prev.filter((o) => o.expiresAt > now));
+    }, 1_000);
+
+    return () => {
+      if (overlayTimerRef.current) clearInterval(overlayTimerRef.current);
+    };
+  }, []);
+
+  // ── Clear overlays on camera/center change ────────────────────────────────────
+  useEffect(() => {
+    setActiveOverlays([]);
+  }, [selectedCamera, selectedCenter]);
 
   // ── Load cameras when center changes ─────────────────────────────────────────
   useEffect(() => {
@@ -288,6 +618,18 @@ export default function MappingPageClient() {
               </p>
             </div>
             <div className="flex items-center gap-2">
+
+              {/* Live AI alert indicator — shown when overlays are active */}
+              {activeOverlays.length > 0 && (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/30 text-xs text-red-400 animate-pulse">
+                  <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+                  <span className="font-semibold">LIVE ALERT</span>
+                  {activeOverlays.map((o) => (
+                    <span key={o.id} className="text-red-300">{OVERLAY_META[o.kind].label}</span>
+                  ))}
+                </div>
+              )}
+
               {/* Reset camera selection */}
               <button
                 onClick={() => {
@@ -330,7 +672,7 @@ export default function MappingPageClient() {
           </div>
 
           {/* Konva Stage — key forces remount on camera change or after success */}
-          <div className="overflow-x-auto rounded-xl">
+          <div className="relative overflow-x-auto rounded-xl">
             <BoundingBoxDrawer
               key={`${selectedCamera.id}-${canvasKey}`}
               stageW={STAGE_W}
@@ -340,6 +682,12 @@ export default function MappingPageClient() {
               existingBox={drawnBox}
               onBoxDrawn={handleBoxDrawn}
               onClear={handleBoxClear}
+            />
+            {/* Live AI alert overlays — only shown when a center is selected */}
+            <CanvasOverlay
+              overlays={activeOverlays}
+              stageW={STAGE_W}
+              stageH={STAGE_H}
             />
           </div>
 

@@ -19,6 +19,9 @@ import type {
   AiResultPayload,
   WifiSensingPayload,
   AudioLevelPayload,
+  ConfidencedAlert,
+  ObjectiveStatus,
+  HybridSourceConfig,
 } from '@/types';
 
 // ─── WS event name constants (mirrors backend mqtt.constants.ts) ──────────────
@@ -26,13 +29,29 @@ export const ALERT_EVENTS = [
   'alert:fall_detected',
   'alert:aggression_detected',
   'alert:high_audio_level',
-  'alert:crowd_detected',  'alert:device_offline',] as const;
+  'alert:crowd_detected',
+  'alert:device_offline',
+  'alert:weapon_detected',
+  'alert:fire_detected',
+  'alert:sick_detected',
+  'alert:idle_agent',
+  'alert:long_service',
+  'alert:long_stay',
+  'alert:vandalism_detected',
+  'alert:irate_customer',
+  'alert:challenged_visitor',
+  'alert:ghost_token',
+  'alert:repeated_visit',
+] as const;
 
 export const UPDATE_EVENTS = [
   'update:wifi_sensing',
   'update:ai_results',
   'update:audio_level',
   'update:device_status',
+  'update:objective_status',
+  'update:resource_saver',
+  'update:hybrid_source',
 ] as const;
 
 export type AlertEvent  = (typeof ALERT_EVENTS)[number];
@@ -44,13 +63,26 @@ export const EVENT_META: Record<
   string,
   { label: string; emoji: string; isAlert: boolean }
 > = {
-  'alert:fall_detected':       { label: 'Fall Detected',     emoji: '🚨', isAlert: true  },
-  'alert:aggression_detected': { label: 'Aggression',        emoji: '⚠️', isAlert: true  },
-  'alert:high_audio_level':    { label: 'High Audio Level',  emoji: '🔊', isAlert: true  },
-  'alert:crowd_detected':      { label: 'Crowd Detected',    emoji: '👥', isAlert: true  },  'alert:device_offline':      { label: 'Device Offline',    emoji: '🔴', isAlert: true  },  'update:wifi_sensing':       { label: 'WiFi Sensing',      emoji: '📡', isAlert: false },
-  'update:ai_results':         { label: 'AI Detection',      emoji: '🤖', isAlert: false },
-  'update:audio_level':        { label: 'Audio Level',       emoji: '🎙️', isAlert: false },
-  'update:device_status':      { label: 'Device Status',     emoji: '📶', isAlert: false },
+  'alert:fall_detected':       { label: 'Fall Detected',        emoji: '🚨', isAlert: true  },
+  'alert:aggression_detected': { label: 'Aggression',           emoji: '⚠️', isAlert: true  },
+  'alert:high_audio_level':    { label: 'High Audio Level',     emoji: '🔊', isAlert: true  },
+  'alert:crowd_detected':      { label: 'Crowd Detected',       emoji: '👥', isAlert: true  },
+  'alert:device_offline':      { label: 'Device Offline',       emoji: '🔴', isAlert: true  },
+  'alert:weapon_detected':     { label: 'Weapon Detected',      emoji: '🔫', isAlert: true  },
+  'alert:fire_detected':       { label: 'Fire / Smoke',         emoji: '🔥', isAlert: true  },
+  'alert:sick_detected':       { label: 'Sudden Sick',          emoji: '🏥', isAlert: true  },
+  'alert:idle_agent':          { label: 'Idle Agent / Counter', emoji: '💤', isAlert: true  },
+  'alert:long_service':        { label: 'Long Serving Time',    emoji: '⏱️', isAlert: true  },
+  'alert:long_stay':           { label: 'Long Stay Detected',   emoji: '🕐', isAlert: true  },
+  'alert:vandalism_detected':  { label: 'Vandalism / Shouting', emoji: '🗣️', isAlert: true  },
+  'alert:irate_customer':      { label: 'Irate Customer',       emoji: '😠', isAlert: true  },
+  'alert:challenged_visitor':  { label: 'Challenged Visitor',   emoji: '♿', isAlert: false },
+  'alert:ghost_token':         { label: 'Ghost Token',          emoji: '👻', isAlert: true  },
+  'alert:repeated_visit':      { label: 'Repeated Visit',       emoji: '🔁', isAlert: false },
+  'update:wifi_sensing':       { label: 'WiFi Sensing',         emoji: '📡', isAlert: false },
+  'update:ai_results':         { label: 'AI Detection',         emoji: '🤖', isAlert: false },
+  'update:audio_level':        { label: 'Audio Level',          emoji: '🎙️', isAlert: false },
+  'update:device_status':      { label: 'Device Status',        emoji: '📶', isAlert: false },
 };
 
 // ─── Shapes ───────────────────────────────────────────────────────────────────
@@ -109,14 +141,35 @@ interface AlertsState {
    */
   tableStatuses: Record<string, TableStatus>;
 
+  // ── Enterprise Dashboard ──────────────────────────────────────────────────
+  /**
+   * Enhanced alert feed with confidence scores + source tech.
+   * Cap at 100 entries. Newest first.
+   */
+  confidencedAlerts: ConfidencedAlert[];
+  /** Per-objective live status — keyed by objectiveId */
+  objectiveStatuses: Record<number, { status: ObjectiveStatus; confidence: number; lastTech: string; lastSeen: string }>;
+  /** Hybrid source config — keyed by objectiveId */
+  hybridSources: Record<number, HybridSourceConfig>;
+  /** Resource Saver Mode: global + per-center */
+  resourceSaverGlobal: boolean;
+  resourceSaverCenters: Record<string, boolean>;
+
   // ── Actions ─────────────────────────────────────────────────────────────────
   addAlert: (event: string, envelope: WsEventEnvelope) => void;
-  updateCenterStatus: (envelope: WsEventEnvelope) => void;  addOfflineDevice: (envelope: WsEventEnvelope) => void;
-  dismissOfflineDevice: (key: string) => void;  updateTableAiResult: (envelope: WsEventEnvelope<AiResultPayload>) => void;
+  updateCenterStatus: (envelope: WsEventEnvelope) => void;
+  addOfflineDevice: (envelope: WsEventEnvelope) => void;
+  dismissOfflineDevice: (key: string) => void;
+  updateTableAiResult: (envelope: WsEventEnvelope<AiResultPayload>) => void;
   updateTableWifiResult: (envelope: WsEventEnvelope<WifiSensingPayload>) => void;
   updateTableAudioLevel: (envelope: WsEventEnvelope<AudioLevelPayload>) => void;
   clearAlerts: () => void;
   markRead: () => void;
+  // Enterprise
+  updateObjectiveStatus: (envelope: WsEventEnvelope) => void;
+  setResourceSaver: (global: boolean, centerId?: string) => void;
+  setHybridSource: (config: HybridSourceConfig) => void;
+  addConfidencedAlert: (alert: ConfidencedAlert) => void;
 }
 
 const MAX_ALERTS = 200;
@@ -128,6 +181,12 @@ export const useAlertsStore = create<AlertsState>((set) => ({
   offlineDevices: [],
   unreadCount: 0,
   tableStatuses: {},
+  // Enterprise
+  confidencedAlerts: [],
+  objectiveStatuses: {},
+  hybridSources: {},
+  resourceSaverGlobal: false,
+  resourceSaverCenters: {},
 
   updateTableAiResult: (envelope) => {
     const d = envelope.data;
@@ -280,4 +339,40 @@ export const useAlertsStore = create<AlertsState>((set) => ({
 
   clearAlerts: () => set({ alerts: [], unreadCount: 0 }),
   markRead:    () => set({ unreadCount: 0 }),
+
+  // ── Enterprise actions ───────────────────────────────────────────────────
+
+  addConfidencedAlert: (alert) =>
+    set((state) => ({
+      confidencedAlerts: [alert, ...state.confidencedAlerts].slice(0, 100),
+    })),
+
+  updateObjectiveStatus: (envelope) => {
+    const d = (envelope.data ?? {}) as Record<string, unknown>;
+    const objectiveId = d['objectiveId'] as number;
+    if (!objectiveId) return;
+    set((state) => ({
+      objectiveStatuses: {
+        ...state.objectiveStatuses,
+        [objectiveId]: {
+          status:    (d['status'] as ObjectiveStatus) ?? 'NORMAL',
+          confidence: (d['confidence'] as number) ?? 0,
+          lastTech:   (d['tech'] as string) ?? 'CCTV',
+          lastSeen:   envelope.serverTime,
+        },
+      },
+    }));
+  },
+
+  setResourceSaver: (globalEnabled, centerId) =>
+    set((state) =>
+      centerId
+        ? { resourceSaverCenters: { ...state.resourceSaverCenters, [centerId]: globalEnabled } }
+        : { resourceSaverGlobal: globalEnabled }
+    ),
+
+  setHybridSource: (config) =>
+    set((state) => ({
+      hybridSources: { ...state.hybridSources, [config.objectiveId]: config },
+    })),
 }));

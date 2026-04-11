@@ -1,5 +1,72 @@
 // ─── Role & Status Enums ──────────────────────────────────────────────────────
 export type Role = 'SUPER_ADMIN' | 'ADMIN' | 'AGENT';
+
+// ─── Enterprise Dashboard: Source Technology ─────────────────────────────────
+/** Which physical sensor technology produces data for a given objective */
+export type SourceTech = 'CCTV' | 'WIFI' | 'AUDIO' | 'CCTV+WIFI' | 'CCTV+AUDIO' | 'ALL';
+
+/** Status of a single objective row in the Unified Status Matrix */
+export type ObjectiveStatus = 'NORMAL' | 'WARNING' | 'ALERT' | 'INACTIVE';
+
+/** Per-row hybrid mode: which source to prioritise */
+export interface HybridSourceConfig {
+  objectiveId: number;
+  /** If true, prioritise WiFi/Audio over GPU-heavy CCTV model */
+  preferLowCompute: boolean;
+  /** Which source is currently active/primary */
+  primarySource: SourceTech;
+}
+
+/** A single alert in the live ticker feed — includes source + confidence */
+export interface ConfidencedAlert {
+  id: string;
+  objectiveId: number;
+  objectiveLabel: string;
+  /** Technology that triggered the alert */
+  tech: SourceTech;
+  /** Confidence score 0–100 */
+  confidence: number;
+  centerId: string;
+  centerName: string;
+  severity: AlertSeverity;
+  serverTime: string;
+  data: Record<string, unknown>;
+}
+
+/** One of the 20 Enterprise Objectives */
+export interface EnterpriseObjective {
+  id: number;
+  label: string;
+  description: string;
+  sources: SourceTech;
+  /** Which WS events trigger this objective */
+  wsEvents: string[];
+  /** Default severity when triggered */
+  defaultSeverity: AlertSeverity;
+  /** Whether GPU-heavy CCTV models are needed */
+  highCompute: boolean;
+}
+
+/** Resource Saver Mode state for a center or globally */
+export interface ResourceSaverState {
+  /** Global override for all centers */
+  globalEnabled: boolean;
+  /** Per-center override — key is centerId */
+  centerOverrides: Record<string, boolean>;
+}
+
+/** Device health entry used in the center health sidebar */
+export interface CenterHealthEntry {
+  centerId: string;
+  centerName: string;
+  camerasOnline: number;
+  camerasTotal: number;
+  wifiNodesOnline: number;
+  wifiNodesTotal: number;
+  /** Average mic level across all microphones 0–100 */
+  avgMicLevel: number;
+  lastActivity: string;
+}
 export type DeviceStatus = 'ONLINE' | 'OFFLINE' | 'MAINTENANCE';
 export type MicrophoneChannel = 'LEFT' | 'RIGHT';
 export type AlertSeverity = 'INFO' | 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
