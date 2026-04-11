@@ -15,7 +15,9 @@ import type { LoginDto } from '@/types';
  *  - logout() action that clears state + cookie and redirects to /login
  */
 export function useAuth() {
-  const store = useAuthStore();
+  const store           = useAuthStore();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const clearAuth       = useAuthStore((s) => s.clearAuth);
   const router = useRouter();
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -23,10 +25,10 @@ export function useAuth() {
   // ── Sync check: clear store if the cookie disappeared (e.g. browser cleared it)
   useEffect(() => {
     const token = Cookies.get(TOKEN_COOKIE_KEY);
-    if (!token && store.isAuthenticated) {
-      store.clearAuth();
+    if (!token && isAuthenticated) {
+      clearAuth();
     }
-  }, [store]);
+  }, [isAuthenticated, clearAuth]);
 
   // ── Login ──────────────────────────────────────────────────────────────────
   const login = async (dto: LoginDto) => {

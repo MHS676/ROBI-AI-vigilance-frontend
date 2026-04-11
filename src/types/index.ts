@@ -8,6 +8,48 @@ export type AlertSeverity = 'INFO' | 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 export type InventoryStatus = 'PENDING' | 'ASSIGNED' | 'OFFLINE' | 'REJECTED';
 export type InventoryDeviceType = 'ESP32' | 'AI_MICROPHONE' | 'CAMERA';
 
+// ─── AI Feature Configuration ─────────────────────────────────────────────────
+/** AI inference features that can be individually toggled per camera. */
+export type AiFeature = 'WEAPON' | 'FIGHT' | 'FALL' | 'FIRE' | 'CROWD';
+
+export const AI_FEATURE_META: Record<
+  AiFeature,
+  { label: string; description: string; icon: string; color: string }
+> = {
+  WEAPON: {
+    label:       'Weapon Detection',
+    description: 'Detects knives, guns, pistols, rifles and other weapons.',
+    icon:        '🔫',
+    color:       'red',
+  },
+  FIGHT: {
+    label:       'Fight / Aggression',
+    description: 'Detects physical altercations and aggressive behaviour.',
+    icon:        '⚠️',
+    color:       'orange',
+  },
+  FALL: {
+    label:       'Fall Detection',
+    description: 'Detects a person falling inside the camera zone.',
+    icon:        '🚨',
+    color:       'yellow',
+  },
+  FIRE: {
+    label:       'Fire & Smoke',
+    description: 'Detects fire or smoke in the camera frame.',
+    icon:        '🔥',
+    color:       'amber',
+  },
+  CROWD: {
+    label:       'Crowd Detection',
+    description: 'Alerts when over-crowding is detected in the zone.',
+    icon:        '👥',
+    color:       'blue',
+  },
+};
+
+export const ALL_AI_FEATURES: AiFeature[] = ['WEAPON', 'FIGHT', 'FALL', 'FIRE', 'CROWD'];
+
 // ─── Domain Models ────────────────────────────────────────────────────────────
 export interface User {
   id: string;
@@ -47,6 +89,8 @@ export interface Camera {
   model: string;
   status: DeviceStatus;
   centerId: string;
+  /** Enabled AI inference features — defaults to all five if not set */
+  aiFeatures: AiFeature[];
 }
 
 export interface EspNode {

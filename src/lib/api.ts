@@ -127,6 +127,9 @@ export const camerasApi = {
     apiClient.post<Camera>('/cameras', dto),
   ping: (id: string) =>
     apiClient.post<{ status: string; latencyMs: number | null; ip: string }>(`/cameras/${id}/ping`),
+  /** Update the enabled AI inference features for a camera (persists + notifies AI worker) */
+  updateAiFeatures: (id: string, aiFeatures: import('@/types').AiFeature[]) =>
+    apiClient.patch<Camera>(`/cameras/${id}/ai-features`, { aiFeatures }),
   remove: (id: string) =>
     apiClient.delete(`/cameras/${id}`),
 };

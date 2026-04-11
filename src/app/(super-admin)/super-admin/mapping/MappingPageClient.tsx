@@ -19,11 +19,13 @@ import {
   ArrowRight,
   CheckCircle2,
   RefreshCw,
+  Bot,
 } from 'lucide-react';
 import { centersApi } from '@/lib/api';
 import type { Center, Camera } from '@/types';
 import type { BBoxNorm } from './BoundingBoxDrawer';
 import LinkTableDrawer from './LinkTableDrawer';
+import AiSettingsModal from './AiSettingsModal';
 
 // ─── Konva canvas — must be loaded client-side only ──────────────────────────
 const BoundingBoxDrawer = dynamic(() => import('./BoundingBoxDrawer'), {
@@ -132,6 +134,22 @@ export default function MappingPageClient() {
     setDrawerOpen(false);
     setCanvasKey((k) => k + 1);
   }, []);
+
+  // ── AI Settings modal ───────────────────────────────────────────────────────
+  const [aiModalOpen, setAiModalOpen]         = useState(false);
+  const [aiCamera, setAiCamera]               = useState<Camera | null>(null);
+
+  const handleOpenAiSettings = useCallback((cam: Camera) => {
+    setAiCamera(cam);
+    setAiModalOpen(true);
+  }, []);
+
+  /** Keep the local camera list in sync when a feature is toggled */
+  const handleAiUpdate = useCallback((updated: Camera) => {
+    setCameras((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+    if (selectedCamera?.id === updated.id) setSelectedCamera(updated);
+    setAiCamera(updated);
+  }, [selectedCamera]);
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
@@ -283,6 +301,20 @@ export default function MappingPageClient() {
                 Switch camera
               </button>
 
+              {/* AI Settings button */}
+              <button
+                onClick={() => handleOpenAiSettings(selectedCamera!)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-cyan-700/40 bg-cyan-500/5 text-xs text-cyan-400 hover:bg-cyan-500/10 hover:border-cyan-600 transition-colors"
+              >
+                <Bot className="w-3.5 h-3.5" />
+                AI Settings
+                {selectedCamera && (
+                  <span className="ml-0.5 px-1.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 text-[10px] font-bold">
+                    {(selectedCamera.aiFeatures ?? []).length}
+                  </span>
+                )}
+              </button>
+
               {/* Open drawer — prominent when box is ready */}
               {drawnBox && (
                 <button
@@ -343,6 +375,12 @@ export default function MappingPageClient() {
         camera={selectedCamera}
         boundingBox={drawnBox}
       />
-    </div>
+      {/* ── AI Settings modal ─────────────────────────────────────────────────────────────────── */}
+      <AiSettingsModal
+        isOpen={aiModalOpen}
+        onClose={() => setAiModalOpen(false)}
+        camera={aiCamera}
+        onUpdate={handleAiUpdate}
+      />    </div>
   );
 }
