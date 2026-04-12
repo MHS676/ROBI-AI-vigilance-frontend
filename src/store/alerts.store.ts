@@ -1,3 +1,5 @@
+'use client';
+
 /**
  * alerts.store.ts — Zustand store for real-time event state.
  *
