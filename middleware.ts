@@ -22,7 +22,7 @@ const ROLE_HOME: Record<string, string> = {
 /** Route-prefix → minimum allowed roles */
 const PROTECTED_ROUTES: Array<{ prefix: string; allowed: string[] }> = [
   { prefix: '/super-admin', allowed: ['SUPER_ADMIN'] },
-  { prefix: '/admin', allowed: ['SUPER_ADMIN', 'ADMIN', 'AGENT'] },
+  { prefix: '/admin',       allowed: ['ADMIN', 'AGENT'] },
 ];
 
 // ─── Middleware ───────────────────────────────────────────────────────────────

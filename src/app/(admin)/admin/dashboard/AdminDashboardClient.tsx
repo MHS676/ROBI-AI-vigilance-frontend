@@ -14,6 +14,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Activity,
   AlertTriangle,
@@ -34,6 +35,14 @@ import type { AiResultPayload, WifiSensingPayload, AudioLevelPayload, WsEventEnv
 export default function AdminDashboardClient() {
   const user       = useAuthStore((s) => s.user);
   const centerId   = user?.centerId ?? '';
+  const router     = useRouter();
+
+  // Super Admin should never land here — bounce them to their own dashboard
+  useEffect(() => {
+    if (user?.role === 'SUPER_ADMIN') {
+      router.replace('/super-admin/dashboard');
+    }
+  }, [user, router]);
 
   // ── Remote data ─────────────────────────────────────────────────────────────
   const [cameras,       setCameras]      = useState<Camera[]>([]);
