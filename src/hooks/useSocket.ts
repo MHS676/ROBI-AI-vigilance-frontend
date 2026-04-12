@@ -75,16 +75,23 @@ export function useSocket(): UseSocketReturn {
       return;
     }
 
-    // Already connected with the same token — just sync UI state
-    if (_socket?.connected && _token === accessToken) {
-      if (mountedRef.current) setStatus('connected');
+    // A socket already exists for this token — don't create another one.
+    // We must NOT require _socket.connected here: if the socket is still in the
+    // handshake phase (connected === false) and multiple components mount at the
+    // same time, each would see connected=false and race to disconnect-and-recreate,
+    // producing the rapid connect/disconnect storm visible in the server logs.
+    if (_socket && _token === accessToken) {
+      if (mountedRef.current) {
+        setStatus(_socket.connected ? 'connected' : 'connecting');
+      }
       return;
     }
 
-    // Token changed or no socket yet — create a fresh connection
+    // Token changed or no socket yet — tear down old socket and create fresh one
     if (_socket) {
       _socket.disconnect();
       _socket = null;
+      _token = null;
     }
 
     const wsUrl = process.env.NEXT_PUBLIC_WS_URL ?? 'http://localhost:3000';
