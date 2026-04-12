@@ -71,6 +71,17 @@ export type DeviceStatus = 'ONLINE' | 'OFFLINE' | 'MAINTENANCE';
 export type MicrophoneChannel = 'LEFT' | 'RIGHT';
 export type AlertSeverity = 'INFO' | 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 
+/** Alert type — mirrors AiFeature values plus sensor-derived event categories */
+export type AlertType =
+  | 'WEAPON'
+  | 'FIGHT'
+  | 'FALL'
+  | 'FIRE'
+  | 'CROWD'
+  | 'HIGH_AUDIO'
+  | 'WIFI_FALL'
+  | 'DEVICE_OFFLINE';
+
 // ─── Provisioning Enums ───────────────────────────────────────────────────────
 export type InventoryStatus = 'PENDING' | 'ASSIGNED' | 'OFFLINE' | 'REJECTED';
 export type InventoryDeviceType = 'ESP32' | 'AI_MICROPHONE' | 'CAMERA';
@@ -198,6 +209,37 @@ export interface Table {
   microphoneId: string | null;
   agentId: string | null;
   isActive: boolean;
+  // ── Spatial Gating (5-foot WiFi / Audio zone) ──────────────
+  /** Top-left X of the WiFi gate zone in floor-plan pixels */
+  wifiZoneX: number | null;
+  /** Top-left Y of the WiFi gate zone in floor-plan pixels */
+  wifiZoneY: number | null;
+  /** Width of the WiFi gate zone in floor-plan pixels */
+  wifiZoneWidth: number | null;
+  /** Height of the WiFi gate zone in floor-plan pixels */
+  wifiZoneHeight: number | null;
+  /** Per-table audio alert threshold in dB (overrides system default when set) */
+  audioThresholdDb: number | null;
+}
+
+/** Persisted AI / sensor alert record — mirrors the DB Alert model */
+export interface Alert {
+  id: string;
+  /** Alert category — e.g. "WEAPON", "FALL", "HIGH_AUDIO" */
+  type: AlertType;
+  /** Severity level */
+  severity: AlertSeverity;
+  /** Model / sensor confidence score (0.0 – 1.0) */
+  confidence: number;
+  /** S3 presigned URL of the JPEG evidence frame (null when not captured) */
+  imageUrl: string | null;
+  timestamp: string;
+  centerId: string;
+  center?: Pick<Center, 'id' | 'name' | 'code'>;
+  tableId: string | null;
+  table?: Pick<Table, 'id' | 'name' | 'tableNumber'> | null;
+  cameraId: string | null;
+  camera?: Pick<Camera, 'id' | 'name'> | null;
 }
 
 export interface HardwareInventory {
