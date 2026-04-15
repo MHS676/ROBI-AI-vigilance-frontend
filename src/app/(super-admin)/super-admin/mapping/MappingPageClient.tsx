@@ -36,7 +36,7 @@ import {
 } from 'lucide-react';
 import { centersApi } from '@/lib/api';
 import type { Center, Camera, WsEventEnvelope } from '@/types';
-import type { BBoxNorm } from './BoundingBoxDrawer';
+import type { BBoxNorm, BBoxPx } from './BoundingBoxDrawer';
 import LinkTableDrawer from './LinkTableDrawer';
 import AiSettingsModal from './AiSettingsModal';
 import { useSocket } from '@/hooks/useSocket';
@@ -332,6 +332,7 @@ export default function MappingPageClient() {
   const [selectedCenter, setSelectedCenter] = useState<Center | null>(null);
   const [selectedCamera, setSelectedCamera] = useState<Camera | null>(null);
   const [drawnBox,       setDrawnBox]        = useState<BBoxNorm | null>(null);
+  const [drawnBoxPx,     setDrawnBoxPx]      = useState<BBoxPx | null>(null);
 
   // ── UI state ─────────────────────────────────────────────────────────────────
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -447,20 +448,23 @@ export default function MappingPageClient() {
   };
 
   /** Called by BoundingBoxDrawer — opens drawer after short delay */
-  const handleBoxDrawn = useCallback((norm: BBoxNorm) => {
+  const handleBoxDrawn = useCallback((norm: BBoxNorm, px: BBoxPx) => {
     setDrawnBox(norm);
+    setDrawnBoxPx(px);
     setTimeout(() => setDrawerOpen(true), 250);
   }, []);
 
   /** Called when user clicks "Clear box" inside the canvas */
   const handleBoxClear = useCallback(() => {
     setDrawnBox(null);
+    setDrawnBoxPx(null);
     setDrawerOpen(false);
   }, []);
 
   /** Called after successful POST — reset canvas for next zone */
   const handleSuccess = useCallback(() => {
     setDrawnBox(null);
+    setDrawnBoxPx(null);
     setDrawerOpen(false);
     setCanvasKey((k) => k + 1);
   }, []);
@@ -722,6 +726,7 @@ export default function MappingPageClient() {
         center={selectedCenter}
         camera={selectedCamera}
         boundingBox={drawnBox}
+        boundingBoxPx={drawnBoxPx}
       />
       {/* ── AI Settings modal ─────────────────────────────────────────────────────────────────── */}
       <AiSettingsModal

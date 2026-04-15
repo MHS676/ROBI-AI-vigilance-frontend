@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { centersApi, usersApi, mappingApi, type LinkTableDto } from '@/lib/api';
 import type { Table, Microphone, User, Center, Camera } from '@/types';
-import type { BBoxNorm } from './BoundingBoxDrawer';
+import type { BBoxNorm, BBoxPx } from './BoundingBoxDrawer';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 interface Props {
@@ -30,6 +30,8 @@ interface Props {
   center: Center | null;
   camera: Camera | null;
   boundingBox: BBoxNorm | null;
+  /** Pixel-space box used for the actual API submission */
+  boundingBoxPx: BBoxPx | null;
 }
 
 // ─── Styled <select> wrapper ──────────────────────────────────────────────────
@@ -80,6 +82,7 @@ export default function LinkTableDrawer({
   center,
   camera,
   boundingBox,
+  boundingBoxPx,
 }: Props) {
   // ── Remote data ─────────────────────────────────────────────────────────────
   const [tables,     setTables]     = useState<Table[]>([]);
@@ -132,7 +135,7 @@ export default function LinkTableDrawer({
 
   // ── Submit handler ───────────────────────────────────────────────────────────
   const handleSubmit = async () => {
-    if (!center || !camera || !boundingBox) return;
+    if (!center || !camera || !boundingBox || !boundingBoxPx) return;
     if (!tableId || !microphoneId || !agentId) {
       setSubmitError('Please fill in all three fields.');
       return;
@@ -142,7 +145,12 @@ export default function LinkTableDrawer({
       centerId:    center.id,
       cameraId:    camera.id,
       tableId,
-      boundingBox,
+      boundingBox: {
+        x: Math.round(boundingBoxPx.x),
+        y: Math.round(boundingBoxPx.y),
+        w: Math.round(boundingBoxPx.width),
+        h: Math.round(boundingBoxPx.height),
+      },
       microphoneId,
       agentId,
     };

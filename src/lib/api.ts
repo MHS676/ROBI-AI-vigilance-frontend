@@ -30,8 +30,8 @@ export interface LinkTableDto {
   centerId: string;
   tableId: string;
   cameraId: string;
-  /** Normalized bounding box — x/y/width/height in 0-1 range */
-  boundingBox: { x: number; y: number; width: number; height: number };
+  /** Pixel-space bounding box — x/y/w/h are integer pixels on the canvas frame */
+  boundingBox: { x: number; y: number; w: number; h: number };
   microphoneId: string;
   agentId: string;
 }
