@@ -162,6 +162,31 @@ export const microphonesApi = {
     apiClient.delete(`/microphones/${id}`),
 };
 
+// ─── Alerts API ───────────────────────────────────────────────────────────────
+export interface AlertsQuery {
+  centerId?:  string;
+  type?:      string;
+  severity?:  string;
+  dateFrom?:  string;  // ISO 8601 e.g. "2026-04-01T00:00:00.000Z"
+  dateTo?:    string;  // ISO 8601 e.g. "2026-04-15T23:59:59.999Z"
+  page?:      number;
+  limit?:     number;
+}
+
+export interface AlertsPage {
+  data: import('@/types').Alert[];
+  meta: { total: number; page: number; limit: number; totalPages: number };
+}
+
+export const alertsApi = {
+  /** Paginated list with optional filters */
+  getAll: (params?: AlertsQuery) =>
+    apiClient.get<AlertsPage>('/alerts', { params }),
+  /** Single alert by UUID */
+  getOne: (id: string) =>
+    apiClient.get<import('@/types').Alert>(`/alerts/${id}`),
+};
+
 // ─── Tables API ───────────────────────────────────────────────────────────────
 export const tablesApi = {
   getAll: (params?: { centerId?: string }) =>

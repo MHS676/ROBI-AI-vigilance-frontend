@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   Search,
   Map,
+  BellRing,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { centersApi } from '@/lib/api';
@@ -31,6 +32,7 @@ const NAV_ITEMS = [
   { href: '/super-admin/microphones', icon: Mic,             label: 'Microphones' },
   { href: '/super-admin/mapping',     icon: Map,             label: 'Mapping' },
   { href: '/super-admin/live',        icon: Activity,        label: 'Live Events' },
+  { href: '/super-admin/alerts',      icon: BellRing,        label: 'Evidence Dashboard' },
 ];
 
 // ─── Component ────────────────────────────────────────────────────────────────
