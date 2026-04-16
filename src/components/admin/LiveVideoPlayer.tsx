@@ -45,9 +45,12 @@ interface Props {
   centerId: string;
 }
 
-// ─── Helper: is URL HLS? ──────────────────────────────────────────────────────
-function isHlsUrl(url: string): boolean {
-  return url.toLowerCase().includes('.m3u8');
+// ─── HLS URL: served by the NestJS /streaming/:cameraId/index.m3u8 endpoint ──
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1'
+
+function hlsStreamUrl(cameraId: string): string {
+  return `${API_BASE}/streaming/${cameraId}/index.m3u8`
 }
 
 // ─── Surveillance placeholder canvas ─────────────────────────────────────────
@@ -121,23 +124,23 @@ function drawPlaceholder(
 
   // Center message
   ctx.fillStyle = isOnline
-    ? 'rgba(255,255,255,0.12)'
+    ? 'rgba(6,182,212,0.25)'
     : 'rgba(239,68,68,0.25)';
   ctx.font = '600 15px system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.fillText(
     isOnline
-      ? 'RTSP stream detected'
+      ? '⏳  Starting stream…'
       : 'Camera offline',
     w / 2, h / 2 - 14,
   );
   ctx.fillStyle = isOnline
-    ? 'rgba(255,255,255,0.07)'
+    ? 'rgba(6,182,212,0.5)'
     : 'rgba(239,68,68,0.15)';
   ctx.font = '12px system-ui, sans-serif';
   ctx.fillText(
     isOnline
-      ? 'Configure an HLS transcoder to view in-browser'
+      ? 'HLS transcoder initialising — video will appear shortly'
       : 'Check network connectivity or device power',
     w / 2, h / 2 + 8,
   );
@@ -232,8 +235,10 @@ export default function LiveVideoPlayer({ cameras, centerId }: Props) {
     setStreamError(null);
     setIsPlaying(false);
 
-    const url = selectedCamera.rtspUrl;
-    if (!url || !isHlsUrl(url) || selectedCamera.status !== 'ONLINE') return;
+    const url = selectedCamera.status === 'ONLINE'
+      ? hlsStreamUrl(selectedCamera.id)
+      : null
+    if (!url) return
 
     // Dynamic import — keeps Hls out of the SSR bundle
     import('hls.js').then(({ default: Hls }) => {
@@ -300,7 +305,7 @@ export default function LiveVideoPlayer({ cameras, centerId }: Props) {
   }, []);
 
   // ── Derived ───────────────────────────────────────────────────────────────
-  const showVideoElement = !!selectedCamera && isHlsUrl(selectedCamera.rtspUrl ?? '') && selectedCamera.status === 'ONLINE';
+  const showVideoElement = !!selectedCamera && selectedCamera.status === 'ONLINE';
   const showPlaceholder  = !showVideoElement;
 
   const W = 800;
