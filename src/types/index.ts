@@ -1,3 +1,35 @@
+// ─── Local Media (on-disk recording index) ───────────────────────────────────
+
+export type MediaType = 'VIDEO' | 'AUDIO' | 'WIFI_SENSING'
+
+export interface LocalMedia {
+  id: string
+  mediaType: MediaType
+  absolutePath: string
+  fileSize: string          // BigInt serialised as string by JSON
+  cameraNumber: number | null
+  micNumber: number | null
+  centerId: string
+  tableId: string | null
+  table?: Pick<Table, 'id' | 'name' | 'tableNumber'> | null
+  center?: Pick<Center, 'id' | 'name' | 'code'> | null
+  recordingDate: string     // "YYYY-MM-DD"
+  durationSec: number | null
+  notes: string | null
+  createdAt: string
+}
+
+export interface LocalMediaPage {
+  data: LocalMedia[]
+  meta: { total: number; page: number; limit: number; totalPages: number }
+}
+
+export interface LocalMediaStats {
+  totalFiles: number
+  totalBytes: bigint | number
+  byType: Record<MediaType, { count: number; bytes: number }>
+}
+
 // ─── Role & Status Enums ──────────────────────────────────────────────────────
 export type Role = 'SUPER_ADMIN' | 'ADMIN' | 'AGENT';
 

@@ -13,6 +13,7 @@ import {
   Building2,
   Table2,
   Map,
+  HardDrive,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
@@ -27,6 +28,7 @@ const NAV_ITEMS = [
   { href: '/admin/tables',      icon: Table2,          label: 'Tables' },
   { href: '/admin/mapping',     icon: Map,             label: 'Mapping' },
   { href: '/admin/live',        icon: Activity,        label: 'Live Events' },
+  { href: '/admin/recordings',  icon: HardDrive,       label: 'Recordings' },
 ];
 
 export default function AdminSidebar() {

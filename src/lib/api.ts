@@ -232,3 +232,81 @@ export const provisioningApi = {
   addDiscoveredCamera: (dto: AddDiscoveredCameraDto) =>
     apiClient.post<Camera>('/provisioning/cameras/add', dto),
 };
+
+// ─── Local Media API ─────────────────────────────────────────────────────────
+
+export interface LocalMediaSearchParams {
+  centerId?: string
+  tableId?: string
+  cameraNumber?: number
+  micNumber?: number
+  mediaType?: import('@/types').MediaType
+  dateFrom?: string   // "YYYY-MM-DD"
+  dateTo?: string     // "YYYY-MM-DD"
+  page?: number
+  limit?: number
+}
+
+export const localMediaApi = {
+  search: (params: LocalMediaSearchParams) =>
+    apiClient.get<import('@/types').LocalMediaPage>('/local-media', { params }),
+  stats: (centerId?: string) =>
+    apiClient.get<import('@/types').LocalMediaStats>('/local-media/stats', { params: centerId ? { centerId } : {} }),
+  getOne: (id: string) =>
+    apiClient.get<import('@/types').LocalMedia>(`/local-media/${id}`),
+  /** Returns a URL for <video src> / <audio src> — appends the JWT as ?token= */
+  streamUrl: (id: string): string => {
+    const token = typeof window !== 'undefined'
+      ? (document.cookie.split('; ').find(r => r.startsWith('falcon_access_token='))?.split('=')[1] ?? '')
+      : ''
+    return `${BASE_URL}/local-media/stream/${id}?token=${encodeURIComponent(token)}`
+  },
+}
+
+// ─── CSI Logs API ─────────────────────────────────────────────────────────────
+
+export interface CsiFilesParams {
+  centerId: string
+  tableId?: string
+  nodeId?: string
+  dateFrom?: string
+  dateTo?: string
+}
+
+export interface CsiPlaybackParams {
+  centerId: string
+  tableId: string
+  nodeId: string
+  from: string
+  to: string
+  limit?: number
+}
+
+export interface CsiFrame {
+  ts: number
+  nodeId: string
+  tableId: string
+  centerId: string
+  csi: number[]
+  estimatedX?: number
+  estimatedY?: number
+}
+
+export interface CsiLogFile {
+  path: string
+  centerId: string
+  tableId: string
+  date: string
+  nodeId: string
+  sizeBytes: number
+  frameCount: number | null
+}
+
+export const csiLogsApi = {
+  listFiles: (params: CsiFilesParams) =>
+    apiClient.get<{ files: CsiLogFile[] }>('/csi-logs/files', { params }),
+  playback: (params: CsiPlaybackParams) =>
+    apiClient.get<{ frames: CsiFrame[]; count: number; totalScanned: number; rangeMs: number }>(
+      '/csi-logs/playback', { params }
+    ),
+}
