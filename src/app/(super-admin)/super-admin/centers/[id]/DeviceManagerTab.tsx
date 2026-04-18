@@ -15,6 +15,8 @@ import {
   ChevronDown,
   ChevronUp,
   Radio,
+  Pencil,
+  Check,
 } from 'lucide-react';
 import { camerasApi, espNodesApi } from '@/lib/api';
 import type { Camera as CameraType, EspNode, DeviceStatus } from '@/types';
@@ -195,6 +197,144 @@ function AddCameraForm({
   );
 }
 
+// ─── Edit Camera Modal ────────────────────────────────────────────────────────
+
+function EditCameraModal({
+  camera,
+  onSaved,
+  onClose,
+}: {
+  camera: CameraType;
+  onSaved: (updated: CameraType) => void;
+  onClose: () => void;
+}) {
+  const [form, setForm] = useState<CameraFormData>({
+    name: camera.name,
+    rtspUrl: camera.rtspUrl,
+    ipAddress: camera.ipAddress ?? '',
+    model: camera.model ?? '',
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const set = (key: keyof CameraFormData) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((f) => ({ ...f, [key]: e.target.value }));
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (!form.name.trim()) { setError('Camera name is required'); return; }
+    if (!form.rtspUrl.trim()) { setError('RTSP URL is required'); return; }
+    setSubmitting(true);
+    try {
+      const res = await camerasApi.update(camera.id, {
+        name: form.name.trim(),
+        rtspUrl: form.rtspUrl.trim(),
+        ipAddress: form.ipAddress.trim() || undefined,
+        model: form.model.trim() || undefined,
+      });
+      onSaved(res.data);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setError(Array.isArray(msg) ? msg.join(', ') : (msg ?? 'Failed to update camera'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    /* backdrop */
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="w-full max-w-lg bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700">
+          <div className="flex items-center gap-2">
+            <Pencil className="w-4 h-4 text-indigo-400" />
+            <span className="font-semibold text-slate-100">Edit Camera</span>
+            <span className="text-xs text-slate-500 font-mono ml-1">{camera.id.slice(-8)}</span>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          {error && (
+            <div className="flex items-center gap-2 p-2.5 rounded-lg bg-red-900/30 border border-red-700/50 text-red-300 text-sm">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              {error}
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Camera Name <span className="text-red-400">*</span></label>
+              <input
+                value={form.name}
+                onChange={set('name')}
+                className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 text-sm placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Model <span className="text-slate-500">(optional)</span></label>
+              <input
+                value={form.model}
+                onChange={set('model')}
+                placeholder="e.g. Hikvision DS-2CD"
+                className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 text-sm placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">IP Address</label>
+              <input
+                value={form.ipAddress}
+                onChange={set('ipAddress')}
+                placeholder="192.168.1.100"
+                className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 text-sm placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">RTSP URL <span className="text-red-400">*</span></label>
+            <input
+              value={form.rtspUrl}
+              onChange={set('rtspUrl')}
+              placeholder="rtsp://user:pass@192.168.1.100:554/stream"
+              className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 text-sm placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition font-mono"
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium transition"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white text-sm font-medium transition"
+            >
+              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+              Save Changes
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // ─── ESP Form ─────────────────────────────────────────────────────────────────
 
 interface EspFormData {
@@ -369,6 +509,7 @@ export default function DeviceManagerTab({ centerId }: { centerId: string }) {
   const [espNodes, setEspNodes] = useState<EspRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [editingCamera, setEditingCamera] = useState<CameraType | null>(null);
   const { on, isConnected } = useSocket();
 
   // ── Fetch ──────────────────────────────────────────────────────────────
@@ -524,6 +665,14 @@ export default function DeviceManagerTab({ centerId }: { centerId: string }) {
     [pingEsp]
   );
 
+  // ── After edit camera: merge updated fields ────────────────────────────
+  const handleCameraUpdated = useCallback((updated: CameraType) => {
+    setCameras((prev) =>
+      prev.map((c) => c.id === updated.id ? { ...c, ...updated } : c)
+    );
+    setEditingCamera(null);
+  }, []);
+
   // ── Remove camera ──────────────────────────────────────────────────────
   const removeCamera = useCallback(async (id: string) => {
     if (!confirm('Remove this camera?')) return;
@@ -577,6 +726,7 @@ export default function DeviceManagerTab({ centerId }: { centerId: string }) {
   const anyPinging = cameras.some((c) => c.pingState.pinging) || espNodes.some((e) => e.pingState.pinging);
 
   return (
+    <>
     <div className="space-y-6">
       {/* Top bar */}
       <div className="flex items-center justify-between">
@@ -683,6 +833,13 @@ export default function DeviceManagerTab({ centerId }: { centerId: string }) {
                           ) : (
                             <WifiOff className="w-3.5 h-3.5" />
                           )}
+                        </button>
+                        <button
+                          onClick={() => setEditingCamera(cam)}
+                          title="Edit camera"
+                          className="p-1.5 rounded-lg bg-slate-700 hover:bg-indigo-800 text-slate-400 hover:text-indigo-300 transition"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
                         </button>
                         <button
                           onClick={() => removeCamera(cam.id)}
@@ -793,5 +950,16 @@ export default function DeviceManagerTab({ centerId }: { centerId: string }) {
         )}
       </SectionCard>
     </div>
+
+    {/* ── Edit Camera Modal ──────────────────────────────────────────── */}
+    {editingCamera && (
+      <EditCameraModal
+        camera={editingCamera}
+        onSaved={handleCameraUpdated}
+        onClose={() => setEditingCamera(null)}
+      />
+    )}
+  </>
   );
 }
+

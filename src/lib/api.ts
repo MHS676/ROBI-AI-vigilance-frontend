@@ -130,6 +130,8 @@ export const camerasApi = {
   /** Update the enabled AI inference features for a camera (persists + notifies AI worker) */
   updateAiFeatures: (id: string, aiFeatures: import('@/types').AiFeature[]) =>
     apiClient.patch<Camera>(`/cameras/${id}/ai-features`, { aiFeatures }),
+  update: (id: string, dto: { name?: string; rtspUrl?: string; ipAddress?: string; model?: string }) =>
+    apiClient.patch<Camera>(`/cameras/${id}`, dto),
   remove: (id: string) =>
     apiClient.delete(`/cameras/${id}`),
 };
