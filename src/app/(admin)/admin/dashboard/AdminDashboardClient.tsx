@@ -13,7 +13,7 @@
  *   alert:*             → addAlert (feed / badge counter)
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Activity,
@@ -62,11 +62,10 @@ export default function AdminDashboardClient() {
   // ── Socket ───────────────────────────────────────────────────────────────────
   const { on, isConnected } = useSocket();
 
-  // ── Fetch cameras + tables on mount ──────────────────────────────────────────
-  useEffect(() => {
+  // ── Fetch cameras + tables ──────────────────────────────────────────────────
+  const fetchCenterData = useCallback((showLoader = false) => {
     if (!centerId) return;
-    setLoading(true);
-
+    if (showLoader) setLoading(true);
     Promise.all([
       centersApi.getCameras(centerId),
       centersApi.getTables(centerId),
@@ -76,8 +75,23 @@ export default function AdminDashboardClient() {
         setTables(tableRes.data);
       })
       .catch(() => setLoadError('Could not load center data. Check your API connection.'))
-      .finally(() => setLoading(false));
+      .finally(() => { if (showLoader) setLoading(false); });
   }, [centerId]);
+
+  useEffect(() => {
+    fetchCenterData(true);
+  }, [fetchCenterData]);
+
+  // Refresh camera list when tab becomes visible again (e.g. after adding a camera)
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === 'visible') fetchCenterData(); };
+    document.addEventListener('visibilitychange', onVisible);
+    const interval = setInterval(() => fetchCenterData(), 60_000);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      clearInterval(interval);
+    };
+  }, [fetchCenterData]);
 
   // ── Subscribe to WebSocket events ────────────────────────────────────────────
   useEffect(() => {
