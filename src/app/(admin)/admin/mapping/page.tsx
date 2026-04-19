@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
-import MappingPageClient from '@/app/(super-admin)/super-admin/mapping/MappingPageClient';
+import dynamic from 'next/dynamic';
+
+const MappingPageClient = dynamic(() => import('@/app/(super-admin)/super-admin/mapping/MappingPageClient'), { ssr: false });
 
 export const metadata: Metadata = {
   title: 'Hardware Mapping | Falcon Intelli-Sense',

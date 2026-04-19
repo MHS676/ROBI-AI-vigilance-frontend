@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
-import AdminLiveClient from './AdminLiveClient';
+import dynamic from 'next/dynamic';
+
+const AdminLiveClient = dynamic(() => import('./AdminLiveClient'), { ssr: false });
 
 export const metadata: Metadata = {
   title: 'Live Events | Falcon Intelli-Sense',

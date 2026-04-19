@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
-import CenterDetailClient from './CenterDetailClient';
+import dynamic from 'next/dynamic';
+
+const CenterDetailClient = dynamic(() => import('./CenterDetailClient'), { ssr: false });
 
 export const metadata: Metadata = { title: 'Center Detail — Falcon Security' };
 

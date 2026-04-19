@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
-import AlertsClient from '@/components/admin/AlertsClient';
+import dynamic from 'next/dynamic';
+
+const AlertsClient = dynamic(() => import('@/components/admin/AlertsClient'), { ssr: false });
 
 export const metadata: Metadata = {
   title: 'Evidence Dashboard | Falcon Intelli-Sense',

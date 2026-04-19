@@ -203,7 +203,16 @@ export default function LiveVideoPlayer({ cameras, centerId }: Props) {
   const [isPlaying,     setIsPlaying]     = useState(false);
   const [isFullscreen,  setIsFullscreen]  = useState(false);
   const [streamError,   setStreamError]   = useState<string | null>(null);
+  const [streamRetrying, setStreamRetrying] = useState(false);
   const [dropdownOpen,  setDropdownOpen]  = useState(false);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Keep selection stable when cameras list refreshes; only reset if gone
+  useEffect(() => {
+    if (!cameras.find((c) => c.id === selectedId) && cameras.length > 0) {
+      setSelectedId(cameras[0].id);
+    }
+  }, [cameras, selectedId]);
 
   const videoRef:    RefObject<HTMLVideoElement>   = useRef(null);
   const placeholderRef: RefObject<HTMLCanvasElement> = useRef(null);
@@ -232,7 +241,9 @@ export default function LiveVideoPlayer({ cameras, centerId }: Props) {
       hlsRef.current.destroy();
       hlsRef.current = null;
     }
+    if (retryTimerRef.current) { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
     setStreamError(null);
+    setStreamRetrying(false);
     setIsPlaying(false);
 
     const url = selectedCamera.status === 'ONLINE'
@@ -259,15 +270,45 @@ export default function LiveVideoPlayer({ cameras, centerId }: Props) {
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         video.play().then(() => setIsPlaying(true)).catch(() => {});
       });
+      let retryCount = 0;
       hls.on(Hls.Events.ERROR, (_: unknown, data: { fatal?: boolean; details?: string }) => {
         if (data.fatal) {
-          setStreamError(`Stream error: ${data.details ?? 'unknown'}`);
           hls.destroy();
+          hlsRef.current = null;
+          if (retryCount < 6) {
+            retryCount++;
+            const delay = Math.min(2000 * retryCount, 15000);
+            setStreamRetrying(true);
+            setStreamError(null);
+            retryTimerRef.current = setTimeout(() => {
+              if (!videoRef.current) return;
+              const hls2 = new Hls({ enableWorker: true, lowLatencyMode: true, backBufferLength: 30 });
+              hlsRef.current = hls2;
+              hls2.loadSource(url);
+              hls2.attachMedia(videoRef.current);
+              hls2.on(Hls.Events.MANIFEST_PARSED, () => {
+                setStreamRetrying(false);
+                videoRef.current?.play().then(() => setIsPlaying(true)).catch(() => {});
+              });
+              hls2.on(Hls.Events.ERROR, (_2: unknown, d2: { fatal?: boolean; details?: string }) => {
+                if (d2.fatal) {
+                  hls2.destroy();
+                  hlsRef.current = null;
+                  setStreamRetrying(false);
+                  setStreamError(`Stream error: ${d2.details ?? 'unknown'}`);
+                }
+              });
+            }, delay);
+          } else {
+            setStreamRetrying(false);
+            setStreamError(`Stream error: ${data.details ?? 'unknown'}`);
+          }
         }
       });
     });
 
     return () => {
+      if (retryTimerRef.current) { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
       if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
     };
   }, [selectedCamera]);
@@ -418,8 +459,16 @@ export default function LiveVideoPlayer({ cameras, centerId }: Props) {
           className="absolute inset-0 w-full h-full pointer-events-none"
         />
 
-        {/* Stream error banner */}
-        {streamError && (
+        {/* Stream retrying indicator */}
+        {streamRetrying && !streamError && (
+          <div className="absolute inset-x-0 top-3 mx-4 px-4 py-2 rounded-lg bg-slate-800/80 border border-slate-700 text-slate-400 text-xs flex items-center gap-2">
+            <RefreshCw className="w-3.5 h-3.5 shrink-0 animate-spin" />
+            Connecting to stream…
+          </div>
+        )}
+
+        {/* Stream error banner — only shown after all retries exhausted */}
+        {streamError && !streamRetrying && (
           <div className="absolute inset-x-0 top-3 mx-4 px-4 py-2 rounded-lg bg-red-500/20 border border-red-500/30 text-red-400 text-xs flex items-center gap-2">
             <VideoOff className="w-3.5 h-3.5 shrink-0" />
             {streamError}
