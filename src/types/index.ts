@@ -354,6 +354,92 @@ export interface AddDiscoveredCameraDto {
   name?: string;
 }
 
+// ─── Agent Intelligence ───────────────────────────────────────────────────────
+
+/** Single-day aggregated activity metrics for an agent */
+export interface DailyActivitySummary {
+  date: string;               // "YYYY-MM-DD"
+  activeMinutes: number;
+  gossipCount: number;
+  avgSentimentScore: number;  // [-1, +1]
+  shi: number;                // [0, 100]
+  idleAlertCount: number;
+}
+
+/** One attendance session (one shift) */
+export interface AttendanceSummary {
+  id: string;
+  entryTime: string;          // ISO
+  exitTime: string | null;    // ISO | null (open session)
+  totalShiftMinutes: number | null;
+  date: string;               // "YYYY-MM-DD"
+}
+
+/** Time-in-chair breakdown computed by AgentIntelligenceService */
+export interface TimeInChairBreakdown {
+  totalShiftMinutes: number;
+  activeMinutes: number;
+  idleMinutes: number;
+  alertDrivenIdleMinutes: number;
+  timeInChairPct: number;     // 0–100
+}
+
+/** Full agent intelligence profile — returned by GET /agent/profile/:id */
+export interface AgentProfile {
+  userId: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  role: string;
+  centerId: string | null;
+  centerName: string | null;
+  assignedTableId: string | null;
+  assignedTableName: string | null;
+  facePhotoPath: string | null;
+  todayAttendance: AttendanceSummary | null;
+  timeInChair: TimeInChairBreakdown | null;
+  todayActivity: DailyActivitySummary | null;
+  recentHistory: DailyActivitySummary[];
+  lifetimeTotals: {
+    totalShifts: number;
+    totalActiveMinutes: number;
+    totalGossipCount: number;
+    avgSentimentScore: number;
+    avgShi: number;
+    avgTimeInChairPct: number;
+  };
+}
+
+/** Payload shape of the `agent:activity_updated` WS event's `data` field */
+export interface AgentActivityWsPayload {
+  agentId: string;
+  agentName: string;
+  tableId: string;
+  tableNumber: number;
+  activeMinutes: number;
+  gossipCount: number;
+  avgSentimentScore: number;
+  shi: number;
+  timeInChair: TimeInChairBreakdown | null;
+  lastSeen: string;
+}
+
+/** Payload shape of the `agent:attendance_updated` WS event's `data` field */
+export interface AgentAttendanceWsPayload {
+  agentId: string;
+  agentName: string;
+  action: 'punch_in' | 'punch_out';
+  attendanceId: string;
+  entryTime: string;
+  exitTime: string | null;
+  totalShiftMinutes: number | null;
+}
+
+/** Payload shape of the `agent:profile_updated` WS event's `data` field */
+export interface AgentProfileWsPayload {
+  profile: AgentProfile;
+}
+
 // ─── Auth DTOs ────────────────────────────────────────────────────────────────
 export interface LoginDto {
   email: string;

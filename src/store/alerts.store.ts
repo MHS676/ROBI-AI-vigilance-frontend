@@ -24,6 +24,9 @@ import type {
   ConfidencedAlert,
   ObjectiveStatus,
   HybridSourceConfig,
+  AgentProfile,
+  AgentActivityWsPayload,
+  AgentAttendanceWsPayload,
 } from '@/types';
 
 // ─── WS event name constants (mirrors backend mqtt.constants.ts) ──────────────
@@ -56,9 +59,17 @@ export const UPDATE_EVENTS = [
   'update:hybrid_source',
 ] as const;
 
+/** Agent Intelligence real-time event names (mirrors WS_EVENTS in mqtt.constants.ts) */
+export const AGENT_EVENTS = [
+  'agent:profile_updated',
+  'agent:activity_updated',
+  'agent:attendance_updated',
+] as const;
+
 export type AlertEvent  = (typeof ALERT_EVENTS)[number];
 export type UpdateEvent = (typeof UPDATE_EVENTS)[number];
-export type WsEvent     = AlertEvent | UpdateEvent;
+export type AgentEvent  = (typeof AGENT_EVENTS)[number];
+export type WsEvent     = AlertEvent | UpdateEvent | AgentEvent;
 
 // ─── Display metadata ─────────────────────────────────────────────────────────
 export const EVENT_META: Record<
@@ -85,6 +96,9 @@ export const EVENT_META: Record<
   'update:ai_results':         { label: 'AI Detection',         emoji: '🤖', isAlert: false },
   'update:audio_level':        { label: 'Audio Level',          emoji: '🎙️', isAlert: false },
   'update:device_status':      { label: 'Device Status',        emoji: '📶', isAlert: false },
+  'agent:profile_updated':     { label: 'Agent Profile Updated', emoji: '🧠', isAlert: false },
+  'agent:activity_updated':    { label: 'Agent Activity',        emoji: '📊', isAlert: false },
+  'agent:attendance_updated':  { label: 'Agent Attendance',      emoji: '🚪', isAlert: false },
 };
 
 // ─── Shapes ───────────────────────────────────────────────────────────────────
@@ -157,6 +171,14 @@ interface AlertsState {
   resourceSaverGlobal: boolean;
   resourceSaverCenters: Record<string, boolean>;
 
+  // ── Agent Intelligence ────────────────────────────────────────────────────
+  /**
+   * Live agent profiles keyed by userId.
+   * Updated by agent:profile_updated, agent:activity_updated,
+   * and agent:attendance_updated WS events.
+   */
+  agentProfiles: Record<string, AgentProfile>;
+
   // ── Actions ─────────────────────────────────────────────────────────────────
   addAlert: (event: string, envelope: WsEventEnvelope) => void;
   updateCenterStatus: (envelope: WsEventEnvelope) => void;
@@ -172,6 +194,13 @@ interface AlertsState {
   setResourceSaver: (global: boolean, centerId?: string) => void;
   setHybridSource: (config: HybridSourceConfig) => void;
   addConfidencedAlert: (alert: ConfidencedAlert) => void;
+  // Agent
+  /** Merge a full AgentProfile received via agent:profile_updated */
+  updateAgentProfile: (envelope: WsEventEnvelope) => void;
+  /** Patch activity fields on an existing cached profile via agent:activity_updated */
+  patchAgentActivity: (envelope: WsEventEnvelope<AgentActivityWsPayload>) => void;
+  /** Patch attendance fields on an existing cached profile via agent:attendance_updated */
+  patchAgentAttendance: (envelope: WsEventEnvelope<AgentAttendanceWsPayload>) => void;
 }
 
 const MAX_ALERTS = 200;
@@ -189,6 +218,8 @@ export const useAlertsStore = create<AlertsState>((set) => ({
   hybridSources: {},
   resourceSaverGlobal: false,
   resourceSaverCenters: {},
+  // Agent Intelligence
+  agentProfiles: {},
 
   updateTableAiResult: (envelope) => {
     const d = envelope.data;
@@ -377,4 +408,58 @@ export const useAlertsStore = create<AlertsState>((set) => ({
     set((state) => ({
       hybridSources: { ...state.hybridSources, [config.objectiveId]: config },
     })),
+
+  // ── Agent Intelligence actions ────────────────────────────────────────────
+
+  updateAgentProfile: (envelope) => {
+    const raw = (envelope.data ?? {}) as Record<string, unknown>;
+    const profile = raw['profile'] as AgentProfile | undefined;
+    if (!profile?.userId) return;
+    set((state) => ({
+      agentProfiles: { ...state.agentProfiles, [profile.userId]: profile },
+    }));
+  },
+
+  patchAgentActivity: (envelope) => {
+    const d = envelope.data;
+    if (!d?.agentId) return;
+    set((state) => {
+      const existing = state.agentProfiles[d.agentId];
+      if (!existing) return {};
+      const patched: AgentProfile = {
+        ...existing,
+        todayActivity: existing.todayActivity
+          ? {
+              ...existing.todayActivity,
+              activeMinutes:      d.activeMinutes,
+              gossipCount:        d.gossipCount,
+              avgSentimentScore:  d.avgSentimentScore,
+              shi:                d.shi,
+            }
+          : null,
+        timeInChair: d.timeInChair ?? existing.timeInChair,
+      };
+      return { agentProfiles: { ...state.agentProfiles, [d.agentId]: patched } };
+    });
+  },
+
+  patchAgentAttendance: (envelope) => {
+    const d = envelope.data;
+    if (!d?.agentId) return;
+    set((state) => {
+      const existing = state.agentProfiles[d.agentId];
+      if (!existing) return {};
+      const patched: AgentProfile = {
+        ...existing,
+        todayAttendance: existing.todayAttendance
+          ? {
+              ...existing.todayAttendance,
+              exitTime:          d.exitTime,
+              totalShiftMinutes: d.totalShiftMinutes,
+            }
+          : existing.todayAttendance,
+      };
+      return { agentProfiles: { ...state.agentProfiles, [d.agentId]: patched } };
+    });
+  },
 }));

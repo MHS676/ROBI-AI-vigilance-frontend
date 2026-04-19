@@ -312,3 +312,11 @@ export const csiLogsApi = {
       '/csi-logs/playback', { params }
     ),
 }
+
+// ─── Agent Intelligence API ───────────────────────────────────────────────────
+
+export const agentApi = {
+  /** Fetch the full aggregated Agent 360 Intelligence profile. */
+  getProfile: (userId: string) =>
+    apiClient.get<import('@/types').AgentProfile>(`/agent/profile/${userId}`),
+}
