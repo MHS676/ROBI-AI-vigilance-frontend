@@ -250,6 +250,7 @@ export default function LiveVideoPlayer({ cameras, centerId }: Props) {
       ? hlsStreamUrl(selectedCamera.id)
       : null
     if (!url) return
+    const streamUrl = url  // non-null for use inside closures
 
     // Dynamic import — keeps Hls out of the SSR bundle
     import('hls.js').then(({ default: Hls }) => {
@@ -259,52 +260,54 @@ export default function LiveVideoPlayer({ cameras, centerId }: Props) {
         video.play().catch(() => setStreamError('Autoplay blocked'));
         return;
       }
-      const hls = new Hls({
-        enableWorker: true,
-        lowLatencyMode: true,
-        backBufferLength: 30,
-      });
-      hlsRef.current = hls;
-      hls.loadSource(url);
-      hls.attachMedia(video);
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        video.play().then(() => setIsPlaying(true)).catch(() => {});
-      });
-      let retryCount = 0;
-      hls.on(Hls.Events.ERROR, (_: unknown, data: { fatal?: boolean; details?: string }) => {
-        if (data.fatal) {
+
+      let attempt = 0;
+      const MAX_ATTEMPTS = 12;        // up to ~90s total wait
+      const cameraIdAtStart = selectedCamera.id;
+
+      function tryConnect() {
+        // Abort if component unmounted or camera changed
+        if (!videoRef.current || selectedCamera.id !== cameraIdAtStart) return;
+
+        const hls = new Hls({
+          enableWorker: true,
+          lowLatencyMode: true,
+          backBufferLength: 30,
+          manifestLoadingTimeOut: 10000,
+          manifestLoadingMaxRetry: 0,  // we manage retries ourselves
+        });
+        hlsRef.current = hls;
+        hls.loadSource(streamUrl);
+        hls.attachMedia(videoRef.current);
+
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          setStreamRetrying(false);
+          setStreamError(null);
+          videoRef.current?.play().then(() => setIsPlaying(true)).catch(() => {});
+        });
+
+        hls.on(Hls.Events.ERROR, (_: unknown, data: { fatal?: boolean; details?: string }) => {
+          if (!data.fatal) return;
           hls.destroy();
           hlsRef.current = null;
-          if (retryCount < 6) {
-            retryCount++;
-            const delay = Math.min(2000 * retryCount, 15000);
+
+          if (!videoRef.current || selectedCamera.id !== cameraIdAtStart) return;
+
+          attempt++;
+          if (attempt < MAX_ATTEMPTS) {
+            // Exponential backoff: 3s, 5s, 7s, 9s … cap at 15s
+            const delay = Math.min(3000 + attempt * 2000, 15000);
             setStreamRetrying(true);
             setStreamError(null);
-            retryTimerRef.current = setTimeout(() => {
-              if (!videoRef.current) return;
-              const hls2 = new Hls({ enableWorker: true, lowLatencyMode: true, backBufferLength: 30 });
-              hlsRef.current = hls2;
-              hls2.loadSource(url);
-              hls2.attachMedia(videoRef.current);
-              hls2.on(Hls.Events.MANIFEST_PARSED, () => {
-                setStreamRetrying(false);
-                videoRef.current?.play().then(() => setIsPlaying(true)).catch(() => {});
-              });
-              hls2.on(Hls.Events.ERROR, (_2: unknown, d2: { fatal?: boolean; details?: string }) => {
-                if (d2.fatal) {
-                  hls2.destroy();
-                  hlsRef.current = null;
-                  setStreamRetrying(false);
-                  setStreamError(`Stream error: ${d2.details ?? 'unknown'}`);
-                }
-              });
-            }, delay);
+            retryTimerRef.current = setTimeout(tryConnect, delay);
           } else {
             setStreamRetrying(false);
             setStreamError(`Stream error: ${data.details ?? 'unknown'}`);
           }
-        }
-      });
+        });
+      }
+
+      tryConnect();
     });
 
     return () => {

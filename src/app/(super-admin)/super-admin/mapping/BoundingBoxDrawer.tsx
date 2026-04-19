@@ -39,6 +39,7 @@ export interface BBoxNorm {
 interface Props {
   stageW: number;
   stageH: number;
+  cameraId: string;
   cameraName: string;
   cameraIp?: string;
   /** Seed with an existing box (in normalized coords) to show a pre-drawn zone */
@@ -127,15 +128,19 @@ function buildPlaceholder(w: number, h: number, name: string): HTMLImageElement 
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
+
 export default function BoundingBoxDrawer({
   stageW,
   stageH,
+  cameraId,
   cameraName,
   existingBox,
   onBoxDrawn,
   onClear,
 }: Props) {
   const [bgImage, setBgImage]   = useState<HTMLImageElement | null>(null);
+  const [snapLoading, setSnapLoading] = useState(true);
   const [isDrawing, setDrawing]  = useState(false);
   const startRef = useRef({ x: 0, y: 0 });
 
@@ -151,13 +156,36 @@ export default function BoundingBoxDrawer({
       : null,
   );
 
-  // Generate placeholder on mount / when camera changes
+  // Load real camera snapshot; fall back to placeholder if unavailable
   useEffect(() => {
-    const img = buildPlaceholder(stageW, stageH, cameraName);
-    img.onload = () => setBgImage(img);
-    // If already loaded (data URL) trigger immediately
-    if (img.complete) setBgImage(img);
-  }, [stageW, stageH, cameraName]);
+    setSnapLoading(true);
+    setBgImage(null);
+    let cancelled = false;
+
+    const loadSnapshot = (attempt = 0) => {
+      const img = new window.Image();
+      img.crossOrigin = 'anonymous';
+      img.src = `${API_BASE}/streaming/${cameraId}/snapshot.jpg?t=${Date.now()}`;
+      img.onload = () => {
+        if (!cancelled) { setBgImage(img); setSnapLoading(false); }
+      };
+      img.onerror = () => {
+        if (cancelled) return;
+        if (attempt < 8) {
+          // retry every 3s while stream warms up
+          setTimeout(() => loadSnapshot(attempt + 1), 3000);
+        } else {
+          // fall back to placeholder
+          const fallback = buildPlaceholder(stageW, stageH, cameraName);
+          fallback.onload = () => { if (!cancelled) { setBgImage(fallback); setSnapLoading(false); } };
+          if (fallback.complete) { setBgImage(fallback); setSnapLoading(false); }
+        }
+      };
+    };
+    loadSnapshot();
+
+    return () => { cancelled = true; };
+  }, [cameraId, stageW, stageH, cameraName]);
 
   // ── Mouse handlers ──────────────────────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -220,6 +248,16 @@ export default function BoundingBoxDrawer({
 
   return (
     <div className="relative select-none">
+      {/* Snapshot loading overlay */}
+      {snapLoading && (
+        <div
+          className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-xl bg-slate-900/70 backdrop-blur-sm"
+          style={{ borderRadius: '12px' }}
+        >
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-cyan-400 border-t-transparent" />
+          <span className="text-xs text-slate-400">Loading camera frame…</span>
+        </div>
+      )}
       {/* Konva Stage */}
       <Stage
         width={stageW}

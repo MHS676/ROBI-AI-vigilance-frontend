@@ -681,6 +681,7 @@ export default function MappingPageClient() {
               key={`${selectedCamera.id}-${canvasKey}`}
               stageW={STAGE_W}
               stageH={STAGE_H}
+              cameraId={selectedCamera.id}
               cameraName={selectedCamera.name}
               cameraIp={selectedCamera.ipAddress}
               existingBox={drawnBox}
